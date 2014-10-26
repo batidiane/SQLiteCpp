@@ -4,7 +4,7 @@
  *
  *  Demonstrate how-to use the SQLite++ wrapper
  *
- * Copyright (c) 2012-2013 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+ * Copyright (c) 2012-2014 Sebastien Rombauts (sebastien.rombauts@gmail.com)
  *
  * Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
  * or copy at http://opensource.org/licenses/MIT)
@@ -16,7 +16,7 @@
 #include <cstdlib>
 
 
-#include "../../src/SQLiteC++.h"
+#include <SQLiteCpp/SQLiteCpp.h>
 
 #ifdef SQLITECPP_ENABLE_ASSERT_HANDLER
 namespace SQLite
@@ -42,12 +42,12 @@ class Example
 {
 public:
     // Constructor
-    Example(void) :
+    Example() :
         mDb(filename_example_db3),                                  // Open a database file in readonly mode
         mQuery(mDb, "SELECT * FROM test WHERE weight > :min_weight")// Compile a SQL query, containing one parameter (index 1)
     {
     }
-    virtual ~Example(void)
+    virtual ~Example()
     {
     }
 
@@ -75,7 +75,7 @@ private:
 };
 
 
-int main (void)
+int main ()
 {
     // Basic example (1/6) :
     try
@@ -118,7 +118,7 @@ int main (void)
                 std::string name2 = query.getColumn(2).getName();
                 std::cout << "aliased result [\"" << name0.c_str() << "\", \"" << name1.c_str() << "\", \"" << name2.c_str() << "\"]\n";
 #ifdef SQLITE_ENABLE_COLUMN_METADATA
-                // Show how to get origin names of the table columns from which thoses result columns come from.
+                // Show how to get origin names of the table columns from which theses result columns come from.
                 // Requires the SQLITE_ENABLE_COLUMN_METADATA preprocessor macro to be
                 // also defined at compile times of the SQLite library itself.
                 name0 = query.getColumn(0).getOriginName();
@@ -195,8 +195,8 @@ int main (void)
         SQLite::Database    db("test.db3", SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE);
         std::cout << "SQLite database file '" << db.getFilename().c_str() << "' opened successfully\n";
 
+        // Create a new table with an explicit "id" column aliasing the underlying rowid
         db.exec("DROP TABLE IF EXISTS test");
-
         db.exec("CREATE TABLE test (id INTEGER PRIMARY KEY, value TEXT)");
 
         // first row

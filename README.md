@@ -42,18 +42,18 @@ where assert() are used instead).
 Each SQLiteC++ object must be constructed with a valid SQLite database connection,
 and then is always valid until destroyed.
 
-### Suported platforms:
+### Supported platforms:
 
-Developements and tests are done under the following OSs :
-- Debian 7 (testing)
+Developements and tests are done under the following OSs:
+- Debian 7
 - Ubuntu 12.10
 - Windows XP/7/8
 And following IDEs/Compilers
-- GCC 4.7.x with a provided Makefile
+- GCC 4.7.2 with a provided Makefile
 - Eclipse CDT under Linux, using the provided Makefile
-- Visual Studio Express 2008/2010/2012 for testing compatibility purpose
+- Visual Studio Express 2008/2010/2012/2013 for testing compatibility purpose
 
-### Dependencies:
+### Dependencies
 
 - a STL implementation (even an old one, like the one provided with VC6 should work)
 - exception support (the class Exception inherit from std::runtime_error)
@@ -61,7 +61,7 @@ And following IDEs/Compilers
   or by adding its source file in your project code base (source code provided in src/sqlite3 for Windows),
   with the SQLITE_ENABLE_COLUMN_METADATA macro defined (see http://www.sqlite.org/compile.html#enable_column_metadata).
 
-### Installation:
+### Installation
 
 To use this wrappers, you need to add the 10 SQLiteC++ source files from the src/ directory
 in your project code base, and compile/link against the sqlite library.
@@ -76,11 +76,8 @@ Under Debian/Ubuntu/Mint Linux, install the libsqlite3-dev package.
 
 ### Building the examples:
 
-A basic Makefile is provided, tested under Linux/Ubuntu 12.10, requiring the sqlite3 static library (sqlite3-dev Debian/Ubuntu package)
-Solutions for Visual Studio 2008 and 2010 are provided in the "msvc/" directory, directly using the sqlite3.c source code for ease of use.
-
 #### CMake and test
-A CMake configuration file is also provided for better multiplatform support and testing.
+A CMake configuration file is also provided for multiplatform support and testing.
 
 Typical generic build (see also "build.bat" or "./build.sh"):
 
@@ -142,7 +139,7 @@ in a custom shared pointer (See the inner class "Statement::Ptr").
 
 ### License
 
-Copyright (c) 2012-2013 Sébastien Rombauts (sebastien.rombauts@gmail.com)
+Copyright (c) 2012-2014 Sébastien Rombauts (sebastien.rombauts@gmail.com)
 
 Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
 or copy at http://opensource.org/licenses/MIT)
@@ -253,3 +250,4 @@ See also the file WRAPPERS.md offering a more complete comparison of other wrapp
  - [SQLite++](http://sqlitepp.berlios.de/): uses boost build system, Boost License 1.0 
  - [CppSQLite](http://www.codeproject.com/Articles/6343/CppSQLite-C-Wrapper-for-SQLite/): famous Code Project but old design, BSD License 
  - [easySQLite](http://code.google.com/p/easysqlite/): manages table as structured objects, complex 
+ - [sqlite_modern_cpp](https://github.com/keramer/sqlite_modern_cpp): modern C++11, all in one file, MIT license

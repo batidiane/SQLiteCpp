@@ -8,11 +8,10 @@
  * Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
  * or copy at http://opensource.org/licenses/MIT)
  */
-#include "Transaction.h"
+#include <SQLiteCpp/Transaction.h>
 
-#include "Database.h"
-#include "Assertion.h"
-#include "Exception.h"
+#include <SQLiteCpp/Database.h>
+#include <SQLiteCpp/Assertion.h>
 
 
 namespace SQLite
@@ -20,7 +19,7 @@ namespace SQLite
 
 
 // Begins the SQLite transaction
-Transaction::Transaction(Database& aDatabase) : // throw(SQLite::Exception)
+Transaction::Transaction(Database& aDatabase) :
     mDatabase(aDatabase),
     mbCommited(false)
 {
@@ -28,7 +27,7 @@ Transaction::Transaction(Database& aDatabase) : // throw(SQLite::Exception)
 }
 
 // Safely rollback the transaction if it has not been committed.
-Transaction::~Transaction(void) throw() // nothrow
+Transaction::~Transaction() noexcept // nothrow
 {
     if (false == mbCommited)
     {
@@ -45,7 +44,7 @@ Transaction::~Transaction(void) throw() // nothrow
 }
 
 // Commit the transaction.
-void Transaction::commit(void) // throw(SQLite::Exception)
+void Transaction::commit()
 {
     if (false == mbCommited)
     {
