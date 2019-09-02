@@ -3,7 +3,7 @@
  * @ingroup SQLiteCpp
  * @brief   Definition of the SQLITECPP_ASSERT() macro.
  *
- * Copyright (c) 2012-2013 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+ * Copyright (c) 2012-2019 Sebastien Rombauts (sebastien.rombauts@gmail.com)
  *
  * Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
  * or copy at http://opensource.org/licenses/MIT)
@@ -40,7 +40,7 @@ namespace SQLite
 #else
 
 // if no assert handler provided by user code, use standard assert()
-// (note: in debug mode, assert() does nothing)
+// (note: in release mode assert() does nothing)
 #define SQLITECPP_ASSERT(expression, message)   assert(expression && message)
 
 #endif

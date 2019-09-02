@@ -53,6 +53,15 @@ import sys
 import unicodedata
 
 
+try:
+    xrange(0,1)
+    PY3 = False
+except NameError:
+    PY3 = True      # Python 3
+    xrange = range
+    unicode = str
+
+
 _USAGE = """
 Syntax: cpplint.py [--verbose=#] [--output=vs7] [--filter=-x,+y,...]
                    [--counting=total|toplevel|detailed] [--root=subdir]
@@ -736,7 +745,7 @@ class _CppLintState(object):
   def PrintErrorCounts(self):
     """Print a summary of errors by category, and the total."""
     # SRombauts: "cpplint:" prefix
-    for category, count in self.errors_by_category.iteritems():
+    for category, count in self.errors_by_category.items():
       sys.stderr.write('cpplint: Category \'%s\' errors found: %d\n' %
                        (category, count))
     # SRombauts: "cpplint:" prefix and error message only when appropriate
@@ -992,8 +1001,13 @@ def Error(filename, linenum, category, confidence, message):
   if _ShouldPrintError(category, confidence, linenum):
     _cpplint_state.IncrementErrorCount(category)
     if _cpplint_state.output_format == 'vs7':
-      sys.stderr.write('%s(%s):  %s  [%s] [%d]\n' % (
-          filename, linenum, message, category, confidence))
+      # SRombauts:
+      if confidence == 5:
+        sys.stderr.write('%s(%s): error: %s  [%s] [%d]\n' % (
+           filename, linenum, message, category, confidence))
+      else: # confidence == [0-4]
+        sys.stderr.write('%s(%s): warning: %s  [%s] [%d]\n' % (
+            filename, linenum, message, category, confidence))
     elif _cpplint_state.output_format == 'eclipse':
       # SRombauts:
       if confidence == 5:
@@ -1002,7 +1016,7 @@ def Error(filename, linenum, category, confidence, message):
       elif confidence == 4:
         sys.stderr.write('%s:%s: warning: %s  [%s] [%d]\n' % (
             filename, linenum, message, category, confidence))
-      else:
+      else: # confidence == [0-3]
         sys.stderr.write('%s:%s: note: %s  [%s] [%d]\n' % (
             filename, linenum, message, category, confidence))
     else:
@@ -3689,7 +3703,7 @@ def _GetTextInside(text, start_pattern):
 
   # Give opening punctuations to get the matching close-punctuations.
   matching_punctuation = {'(': ')', '{': '}', '[': ']'}
-  closing_punctuation = set(matching_punctuation.itervalues())
+  closing_punctuation = set(matching_punctuation.values())
 
   # Find the position to start extracting text.
   match = re.search(start_pattern, text, re.M)
@@ -3790,7 +3804,7 @@ def CheckLanguage(filename, clean_lines, linenum, file_extension,
   # probably a member operator declaration or default constructor.
   match = Search(
       r'(\bnew\s+)?\b'  # Grab 'new' operator, if it's there
-      r'(int|float|double|bool|char|int32|uint32|int64|uint64)'
+      r'(int|short|long|float|double|bool|char|const char*|int8_t|int16_t|int32_t|int64_t|uint8_t|uint16_t|uint32_t|uint64_t)'
       r'(\([^)].*)', line)
   if match:
     matched_new = match.group(1)
@@ -4494,7 +4508,7 @@ def CheckForIncludeWhatYouUse(filename, clean_lines, include_state, error,
     template = required[required_header_unstripped][1]
     if required_header_unstripped.strip('<>"') not in include_state:
       error(filename, required[required_header_unstripped][0],
-            'build/include_what_you_use', 4,
+            'build/include_what_you_use', 2,
             'Add #include ' + required_header_unstripped + ' for ' + template)
 
 
@@ -4774,17 +4788,19 @@ def main():
 
   # Change stderr to write with replacement characters so we don't die
   # if we try to print something containing non-ASCII characters.
-  sys.stderr = codecs.StreamReaderWriter(sys.stderr,
-                                         codecs.getreader('utf8'),
-                                         codecs.getwriter('utf8'),
-                                         'replace')
+  if not PY3:
+    sys.stderr = codecs.StreamReaderWriter(sys.stderr,
+                                           codecs.getreader('utf8'),
+                                           codecs.getwriter('utf8'),
+                                           'replace')
 
   _cpplint_state.ResetErrorCounts()
   for filename in filenames:
     ProcessFile(filename, _cpplint_state.verbose_level)
   _cpplint_state.PrintErrorCounts()
 
-  sys.exit(_cpplint_state.error_count > 0)
+  # SRombauts: do not break build for cpplint style warnings
+  #sys.exit(_cpplint_state.error_count > 0)
 
 
 if __name__ == '__main__':

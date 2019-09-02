@@ -27,7 +27,7 @@ Transaction::Transaction(Database& aDatabase) :
 }
 
 // Safely rollback the transaction if it has not been committed.
-Transaction::~Transaction() noexcept // nothrow
+Transaction::~Transaction()
 {
     if (false == mbCommited)
     {
@@ -35,10 +35,9 @@ Transaction::~Transaction() noexcept // nothrow
         {
             mDatabase.exec("ROLLBACK");
         }
-        catch (SQLite::Exception& e)
+        catch (SQLite::Exception&)
         {
-            // Never throw an exception in a destructor
-            SQLITECPP_ASSERT(false, e.what());  // See SQLITECPP_ENABLE_ASSERT_HANDLER
+            // Never throw an exception in a destructor: error if already rollbacked, but no harm is caused by this.
         }
     }
 }
@@ -53,7 +52,7 @@ void Transaction::commit()
     }
     else
     {
-        throw SQLite::Exception("Transaction already commited");
+        throw SQLite::Exception("Transaction already commited.");
     }
 }
 

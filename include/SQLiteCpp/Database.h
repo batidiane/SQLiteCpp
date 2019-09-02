@@ -3,22 +3,55 @@
  * @ingroup SQLiteCpp
  * @brief   Management of a SQLite Database Connection.
  *
- * Copyright (c) 2012-2013 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+ * Copyright (c) 2012-2019 Sebastien Rombauts (sebastien.rombauts@gmail.com)
  *
  * Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
  * or copy at http://opensource.org/licenses/MIT)
  */
 #pragma once
 
-#include <sqlite3.h>
-
 #include <SQLiteCpp/Column.h>
+#include <SQLiteCpp/Utils.h>    // definition of nullptr for C++98/C++03 compilers
 
-#include <string>
+#include <string.h>
+
+// Forward declarations to avoid inclusion of <sqlite3.h> in a header
+struct sqlite3;
+struct sqlite3_context;
+
+#ifndef SQLITE_USE_LEGACY_STRUCT // Since SQLITE 3.19 (used by default since SQLiteCpp 2.1.0)
+typedef struct sqlite3_value sqlite3_value;
+#else // Before SQLite 3.19 (legacy struct forward declaration can be activated with CMake SQLITECPP_LEGACY_STRUCT var)
+struct Mem;
+typedef struct Mem sqlite3_value;
+#endif
 
 
 namespace SQLite
 {
+
+// Those public constants enable most usages of SQLiteCpp without including <sqlite3.h> in the client application.
+
+/// The database is opened in read-only mode. If the database does not already exist, an error is returned.
+extern const int OPEN_READONLY;     // SQLITE_OPEN_READONLY
+/// The database is opened for reading and writing if possible, or reading only if the file is write protected
+/// by the operating system. In either case the database must already exist, otherwise an error is returned.
+extern const int OPEN_READWRITE;    // SQLITE_OPEN_READWRITE
+/// With OPEN_READWRITE: The database is opened for reading and writing, and is created if it does not already exist.
+extern const int OPEN_CREATE;       // SQLITE_OPEN_CREATE
+
+/// Enable URI filename interpretation, parsed according to RFC 3986 (ex. "file:data.db?mode=ro&cache=private")
+extern const int OPEN_URI;          // SQLITE_OPEN_URI
+
+extern const int OK;                ///< SQLITE_OK (used by inline check() bellow)
+
+extern const char*  VERSION;        ///< SQLITE_VERSION string from the sqlite3.h used at compile time
+extern const int    VERSION_NUMBER; ///< SQLITE_VERSION_NUMBER from the sqlite3.h used at compile time
+
+/// Return SQLite version string using runtime call to the compiled library
+const char* getLibVersion() noexcept; // nothrow
+/// Return SQLite version number using runtime call to the compiled library
+int   getLibVersionNumber() noexcept; // nothrow
 
 
 /**
@@ -53,13 +86,17 @@ public:
      *
      * Exception is thrown in case of error, then the Database object is NOT constructed.
      *
-     * @param[in] apFilename    UTF-8 path/uri to the database file ("filename" sqlite3 parameter)
-     * @param[in] aFlags        SQLITE_OPEN_READONLY/SQLITE_OPEN_READWRITE/SQLITE_OPEN_CREATE...
-     * @param[in] apVfs         UTF-8 name of custom VFS to use, or nullptr for sqlite3 default
+     * @param[in] apFilename        UTF-8 path/uri to the database file ("filename" sqlite3 parameter)
+     * @param[in] aFlags            SQLite::OPEN_READONLY/SQLite::OPEN_READWRITE/SQLite::OPEN_CREATE...
+     * @param[in] aBusyTimeoutMs    Amount of milliseconds to wait before returning SQLITE_BUSY (see setBusyTimeout())
+     * @param[in] apVfs             UTF-8 name of custom VFS to use, or nullptr for sqlite3 default
      *
      * @throw SQLite::Exception in case of error
      */
-    Database(const char* apFilename, const int aFlags = SQLITE_OPEN_READONLY, const char * apVfs = NULL);
+    Database(const char* apFilename,
+             const int   aFlags         = SQLite::OPEN_READONLY,
+             const int   aBusyTimeoutMs = 0,
+             const char* apVfs          = nullptr);
 
     /**
      * @brief Open the provided database UTF-8 filename.
@@ -71,13 +108,31 @@ public:
      *
      * Exception is thrown in case of error, then the Database object is NOT constructed.
      *
-     * @param[in] aFilename     UTF-8 path/uri to the database file ("filename" sqlite3 parameter)
-     * @param[in] aFlags        SQLITE_OPEN_READONLY/SQLITE_OPEN_READWRITE/SQLITE_OPEN_CREATE...
-     * @param[in] aVfs          UTF-8 name of custom VFS to use, or empty string for sqlite3 default
+     * @param[in] aFilename         UTF-8 path/uri to the database file ("filename" sqlite3 parameter)
+     * @param[in] aFlags            SQLite::OPEN_READONLY/SQLite::OPEN_READWRITE/SQLite::OPEN_CREATE...
+     * @param[in] aBusyTimeoutMs    Amount of milliseconds to wait before returning SQLITE_BUSY (see setBusyTimeout())
+     * @param[in] aVfs              UTF-8 name of custom VFS to use, or empty string for sqlite3 default
      *
      * @throw SQLite::Exception in case of error
      */
-    Database(const std::string& aFilename, const int aFlags = SQLITE_OPEN_READONLY, const std::string& aVfs = "");
+    Database(const std::string& aFilename,
+             const int          aFlags          = SQLite::OPEN_READONLY,
+             const int          aBusyTimeoutMs  = 0,
+             const std::string& aVfs            = "");
+
+#if __cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1600)
+    /**
+     * @brief Move an SQLite database connection.
+     *
+     * @param[in] aDatabase Database to move
+     */
+    inline Database(Database&& aDatabase) noexcept :
+        mpSQLite(aDatabase.mpSQLite),
+        mFilename(std::move(aDatabase.mFilename))
+    {
+        aDatabase.mpSQLite = nullptr;
+    }
+#endif
 
     /**
      * @brief Close the SQLite database connection.
@@ -87,7 +142,22 @@ public:
      *
      * @warning assert in case of error
      */
-    virtual ~Database() noexcept; // nothrow
+    ~Database();
+
+    /**
+     * @brief Set a busy handler that sleeps for a specified amount of time when a table is locked.
+     *
+     *  This is useful in multithreaded program to handle case where a table is locked for writing by a thread.
+     * Any other thread cannot access the table and will receive a SQLITE_BUSY error:
+     * setting a timeout will wait and retry up to the time specified before returning this SQLITE_BUSY error.
+     *  Reading the value of timeout for current connection can be done with SQL query "PRAGMA busy_timeout;".
+     *  Default busy timeout is 0ms.
+     *
+     * @param[in] aBusyTimeoutMs    Amount of milliseconds to wait before returning SQLITE_BUSY
+     *
+     * @throw SQLite::Exception in case of error
+     */
+    void setBusyTimeout(const int aBusyTimeoutMs);
 
     /**
      * @brief Shortcut to execute one or multiple statements without results.
@@ -207,16 +277,6 @@ public:
     }
 
     /**
-     * @brief Set a busy handler that sleeps for a specified amount of time when a table is locked.
-     *
-     * @param[in] aTimeoutMs    Amount of milliseconds to wait before returning SQLITE_BUSY
-     */
-    inline int setBusyTimeout(int aTimeoutMs) noexcept // nothrow
-    {
-        return sqlite3_busy_timeout(mpSQLite, aTimeoutMs);
-    }
-
-    /**
      * @brief Get the rowid of the most recent successful INSERT into the database from the current connection.
      *
      *  Each entry in an SQLite table always has a unique 64-bit signed integer key called the rowid.
@@ -224,39 +284,36 @@ public:
      *
      * @return Rowid of the most recent successful INSERT into the database, or 0 if there was none.
      */
-    inline sqlite3_int64 getLastInsertRowid() const noexcept // nothrow
-    {
-        return sqlite3_last_insert_rowid(mpSQLite);
-    }
+    long long getLastInsertRowid() const noexcept; // nothrow
 
-    /**
-     * @brief Get total number of rows modified by all INSERT, UPDATE or DELETE statement since connection.
-     *
-     * @return Total number of rows modified since connection to the database. DROP tables does not count.
-     */
-    inline int getTotalChanges() const noexcept // nothrow
-    {
-        return sqlite3_total_changes(mpSQLite);
-    }
+    /// Get total number of rows modified by all INSERT, UPDATE or DELETE statement since connection (not DROP table).
+    int getTotalChanges() const noexcept; // nothrow
 
-    /**
-     * @brief Return the filename used to open the database
-     */
-    inline const std::string& getFilename() const noexcept // nothrow
+    /// Return the numeric result code for the most recent failed API call (if any).
+    int getErrorCode() const noexcept; // nothrow
+    /// Return the extended numeric result code for the most recent failed API call (if any).
+    int getExtendedErrorCode() const noexcept; // nothrow
+    /// Return UTF-8 encoded English language explanation of the most recent failed API call (if any).
+    const char* getErrorMsg() const noexcept; // nothrow
+
+    /// Return the filename used to open the database.
+    const std::string& getFilename() const noexcept // nothrow
     {
         return mFilename;
     }
 
     /**
-     * @brief Return UTF-8 encoded English language explanation of the most recent error.
+     * @brief Return raw pointer to SQLite Database Connection Handle.
+     *
+     * This is often needed to mix this wrapper with other libraries or for advance usage not supported by SQLiteCpp.
      */
-    inline const char* errmsg() const noexcept // nothrow
+    inline sqlite3* getHandle() const noexcept // nothrow
     {
-        return sqlite3_errmsg(mpSQLite);
+        return mpSQLite;
     }
 
     /**
-     * @brief Create or redefine a SQL function or aggregate in the sqlite database. 
+     * @brief Create or redefine a SQL function or aggregate in the sqlite database.
      *
      *  This is the equivalent of the sqlite3_create_function_v2 command.
      * @see http://www.sqlite.org/c3ref/create_function.html
@@ -267,10 +324,10 @@ public:
      * @param[in] aNbArg        Number of arguments in the function
      * @param[in] abDeterministic Optimize for deterministic functions (most are). A random number generator is not.
      * @param[in] apApp         Arbitrary pointer of user data, accessible with sqlite3_user_data().
-     * @param[in] apFunc        Pointer to a C-function to implement a scalar SQL function (apStep & apFinal NULL)
-     * @param[in] apStep        Pointer to a C-function to implement an aggregate SQL function (apFunc NULL)
-     * @param[in] apFinal       Pointer to a C-function to implement an aggregate SQL function (apFunc NULL)
-     * @param[in] apDestroy     If not NULL, then it is the destructor for the application data pointer.
+     * @param[in] apFunc        Pointer to a C-function to implement a scalar SQL function (apStep & apFinal nullptr)
+     * @param[in] apStep        Pointer to a C-function to implement an aggregate SQL function (apFunc nullptr)
+     * @param[in] apFinal       Pointer to a C-function to implement an aggregate SQL function (apFunc nullptr)
+     * @param[in] apDestroy     If not nullptr, then it is the destructor for the application data pointer.
      *
      * @throw SQLite::Exception in case of error
      */
@@ -284,7 +341,7 @@ public:
                         void      (*apDestroy)(void *));
 
     /**
-     * @brief Create or redefine a SQL function or aggregate in the sqlite database. 
+     * @brief Create or redefine a SQL function or aggregate in the sqlite database.
      *
      *  This is the equivalent of the sqlite3_create_function_v2 command.
      * @see http://www.sqlite.org/c3ref/create_function.html
@@ -295,10 +352,10 @@ public:
      * @param[in] aNbArg        Number of arguments in the function
      * @param[in] abDeterministic Optimize for deterministic functions (most are). A random number generator is not.
      * @param[in] apApp         Arbitrary pointer of user data, accessible with sqlite3_user_data().
-     * @param[in] apFunc        Pointer to a C-function to implement a scalar SQL function (apStep & apFinal NULL)
-     * @param[in] apStep        Pointer to a C-function to implement an aggregate SQL function (apFunc NULL)
-     * @param[in] apFinal       Pointer to a C-function to implement an aggregate SQL function (apFunc NULL)
-     * @param[in] apDestroy     If not NULL, then it is the destructor for the application data pointer.
+     * @param[in] apFunc        Pointer to a C-function to implement a scalar SQL function (apStep & apFinal nullptr)
+     * @param[in] apStep        Pointer to a C-function to implement an aggregate SQL function (apFunc nullptr)
+     * @param[in] apFinal       Pointer to a C-function to implement an aggregate SQL function (apFunc nullptr)
+     * @param[in] apDestroy     If not nullptr, then it is the destructor for the application data pointer.
      *
      * @throw SQLite::Exception in case of error
      */
@@ -315,6 +372,84 @@ public:
                               apApp, apFunc, apStep, apFinal, apDestroy);
     }
 
+    /**
+     * @brief Load a module into the current sqlite database instance.
+     *
+     *  This is the equivalent of the sqlite3_load_extension call, but additionally enables
+     *  module loading support prior to loading the requested module.
+     *
+     * @see http://www.sqlite.org/c3ref/load_extension.html
+     *
+     * @note UTF-8 text encoding assumed.
+     *
+     * @param[in] apExtensionName   Name of the shared library containing extension
+     * @param[in] apEntryPointName  Name of the entry point (nullptr to let sqlite work it out)
+     *
+     * @throw SQLite::Exception in case of error
+     */
+    void loadExtension(const char* apExtensionName, const char* apEntryPointName);
+
+    /**
+    * @brief Set the key for the current sqlite database instance.
+    *
+    *  This is the equivalent of the sqlite3_key call and should thus be called
+    *  directly after opening the database.
+    *  Open encrypted database -> call db.key("secret") -> database ready
+    *
+    * @param[in] aKey   Key to decode/encode the database
+    *
+    * @throw SQLite::Exception in case of error
+    */
+    void key(const std::string& aKey) const;
+
+    /**
+    * @brief Reset the key for the current sqlite database instance.
+    *
+    *  This is the equivalent of the sqlite3_rekey call and should thus be called
+    *  after the database has been opened with a valid key. To decrypt a
+    *  database, call this method with an empty string.
+    *  Open normal database -> call db.rekey("secret") -> encrypted database, database ready
+    *  Open encrypted database -> call db.key("secret") -> call db.rekey("newsecret") -> change key, database ready
+    *  Open encrypted database -> call db.key("secret") -> call db.rekey("") -> decrypted database, database ready
+    *
+    * @param[in] aNewKey   New key to encode the database
+    *
+    * @throw SQLite::Exception in case of error
+    */
+    void rekey(const std::string& aNewKey) const;
+
+    /**
+    * @brief Test if a file contains an unencrypted database.
+    *
+    *  This is a simple test that reads the first bytes of a database file and
+    *  compares them to the standard header for unencrypted databases. If the
+    *  header does not match the standard string, we assume that we have an
+    *  encrypted file.
+    *
+    * @param[in] aFilename path/uri to a file
+    *
+    * @return true if the database has the standard header.
+    *
+    * @throw SQLite::Exception in case of error
+    */
+    static bool isUnencrypted(const std::string& aFilename);
+
+    /**
+     * @brief BackupType for the backup() method
+     */
+    enum BackupType { Save, Load };
+
+    /**
+     * @brief Load or save the database content.
+     *
+     * This function is used to load the contents of a database file on disk
+     * into the "main" database of open database connection, or to save the current
+     * contents of the database into a database file on disk.
+     *
+     * @return SQLITE_OK on success or an error code from SQLite.
+     */
+    int backup(const char* zFilename, BackupType type);
+
 private:
     /// @{ Database must be non-copyable
     Database(const Database&);
@@ -324,11 +459,17 @@ private:
     /**
      * @brief Check if aRet equal SQLITE_OK, else throw a SQLite::Exception with the SQLite error message
      */
-    void check(const int aRet) const;
+    inline void check(const int aRet) const
+    {
+        if (SQLite::OK != aRet)
+        {
+            throw SQLite::Exception(mpSQLite, aRet);
+        }
+    }
 
 private:
-    sqlite3*    mpSQLite;   //!< Pointer to SQLite Database Connection Handle
-    std::string mFilename;  //!< UTF-8 filename used to open the database
+    sqlite3*    mpSQLite;   ///< Pointer to SQLite Database Connection Handle
+    std::string mFilename;  ///< UTF-8 filename used to open the database
 };
 
 
